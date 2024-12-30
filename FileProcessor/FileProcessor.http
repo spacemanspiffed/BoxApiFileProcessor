@@ -1,0 +1,29 @@
+@FileProcessor_HostAddress = http://localhost:7039
+
+GET {{FileProcessor_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
+
+POST https://localhost:7039/file/process
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="How Tariffs Work.mp4"
+Content-Type: video/mp4
+
+< ./wwwroot/How Tariffs Work.mp4
+--boundary--
+
+###
+
+POST {{FileProcessor_HostAddress}}/file/process
+Content-Type: application/json
+{
+    "FilePath": "C:\\code\\Ditto\\FileProcessor\\FileProcessor\\wwwroot\\How Tariffs Work.mp4"
+}
+
+###
+
+POST https://localhost:7039/file/boxprocess
+Content-Type: application/json
