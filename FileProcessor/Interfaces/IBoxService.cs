@@ -7,6 +7,8 @@
     {
         Task<FileFull> GetFileByIdAsync(string fileId); 
         Task<Stream> DownloadFileAsync(string fileId);
-        Task<string> GetFullPathAsync(FileFull boxFileInfo);
+        Task<List<string>> GetFullPathAsync(FileFull boxFileInfo);
+        Task<UserFull> TestConnectionAsync();
+        Task<FileFull> CreateSharedLinkAsync(FileFull file);
     }
 }

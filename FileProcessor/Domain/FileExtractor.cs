@@ -1,7 +1,8 @@
 ﻿using Box.Sdk.Gen.Schemas;
 using FileProcessor.Controllers;
-using FileProcessor.Entities;
 using FileProcessor.Interfaces;
+using FileProcessor.Models;
+using FileProcessor.Services;
 using MediaInfo;
 
 namespace FileProcessor.Domain
@@ -9,93 +10,123 @@ namespace FileProcessor.Domain
     public class FileExtractor : IFileExtraction
     {
         private readonly ILogger<FileExtractor> _logger;
-        public FileExtractor(ILogger<FileExtractor> logger)
+        private readonly IBoxService _boxService;
+        public FileExtractor(ILogger<FileExtractor> logger, IBoxService boxService)
         {
             _logger = logger;
+            _boxService = boxService;
+        }
 
-        }       
-        public TimeSpan ExtractFromStream(Stream stream)
+        public async Task<JobLog> CreateFileMetaData(FileFull file, List<string> fullPath)
         {
-            
-            MediaInfoWrapper wrapper = new MediaInfoWrapper(stream, _logger);
+            // Match client name and template from a folder in the full path
+            var matchedClient = GoogleSheetsService.GetAllClients()
+                .FirstOrDefault(client => fullPath.Contains(client, StringComparer.OrdinalIgnoreCase));
 
-            TimeSpan duration = TimeSpan.FromMilliseconds(wrapper.Duration);
-            return duration;
-           
+            var hyperLinkToClientTemplate = matchedClient != null ? GoogleSheetsService.GetTemplateForClient(matchedClient) : null;
+
+            //Per Alec -- If the client name is null we can go with the email address of the uploader
+            if (matchedClient == null)
+            {
+                matchedClient = file.CreatedBy.Id;
+            }
+
+            var mapping = new List<string>()
+            {
+             "1-2 Business Days",
+             "3-5 Business Days",
+             "6-10 Business Days"
+            };
+            // Match TATType from the full path
+
+            var firstMatch = fullPath.FirstOrDefault(mapping.Contains);
+
+            //This is backwards            
+
+            var folderResponseType = firstMatch != null && Enum.TryParse<TATType>(firstMatch, out var tatType)
+                ? tatType switch
+                {
+                    TATType.Rushed => "1-2 Business Days",
+                    TATType.Standard => "3-5 Business Days",
+                    TATType.Extended => "6-10 Business Days",
+                    _ => "Unknown"
+                }
+                : "Unknown";
+
+            var ClientTypeMapping = new List<string>()
+            {
+             "Legal Clients",
+             "Law Enforcement Clients",
+             "Website Uploads"
+            };           
+
+
+            // Download file to process duration
+            var downloadStream = await _boxService.DownloadFileAsync(file.Id);
+            var duration = await ProcessFileWithMediaInfo(file, downloadStream);
+
+            var linkUrl = $"https://app.box.com/file/{file.Id}";
+
+            return new JobLog
+            {
+                Client = matchedClient,
+                Template = hyperLinkToClientTemplate,
+                Category = "Law Enforcement",
+                FileName = file.Name,
+                FileLink = linkUrl,
+                DateReceived = TimeZoneInfo.ConvertTime(file.CreatedAt?.UtcDateTime ?? DateTime.UtcNow,
+                                           TimeZoneInfo.FindSystemTimeZoneById("Mountain Standard Time")),
+                FileLength = duration,
+                Minutes = duration.TotalMinutes,
+                TAT = folderResponseType,
+                NotesAndComments = file.Description
+            };
 
         }
 
-        public FileMetaData ExtractMetadata(string filePath, string fileName)
+        private async Task<TimeSpan> ProcessFileWithMediaInfo(FileFull file, System.IO.Stream downloadStream)
         {
-            if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
-            {
-                throw new FileNotFoundException("The file does not exist.");
-            }
-
-            string fileExtension = Path.GetExtension(fileName).ToLower();
-
-            switch (fileExtension)
-            {
-                case ".mp4":
-                case ".mkv":
-                case ".avi":
-                    return ExtractVideoMetadata(filePath, fileName);
-
-                case ".mp3":
-                case ".wav":
-                    return ExtractAudioMetadata(filePath, fileName);
-
-                default:
-                    throw new NotSupportedException($"The file type '{fileExtension}' is not supported.");
-            }
-        }
-
-        private FileMetaData ExtractVideoMetadata(string filePath, string fileName)
-        {
+            var tempPath = Path.Combine(Path.GetTempPath(), file.Name);
             try
             {
-                MediaInfoWrapper wrapper = new MediaInfoWrapper(filePath, _logger);                
-
-                return new FileMetaData
+                using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
                 {
-                    FileName = fileName,
-                    Extension = Path.GetExtension(fileName),
-                    Duration = TimeSpan.FromMilliseconds(wrapper.Duration),
-                    ExtractedDate = DateTime.Now,
-                    UploadDate = DateTime.Now, //TODO: Get Date from Box
-                    Description = "This is a test real description will come from Box",
-                    FolderResponseType = "",
-                    ClientEmail = "sjustus@justustechsolutions.com",
-                    UploadedBy = "sjustus@justustechsolutions.com"
+                    await downloadStream.CopyToAsync(fileStream);
+                }
 
-                };
+                _logger.LogInformation("File downloaded and saved to temporary location.");
+
+                var mediaInfoWrapper = new MediaInfoWrapper(tempPath, _logger);
+                _logger.LogDebug($"Duration: {mediaInfoWrapper.Duration}");
+
+                return TimeSpan.FromMilliseconds(mediaInfoWrapper.Duration);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-
+                _logger.LogError(ex, "Error processing file with MediaInfoWrapper.");
                 throw;
             }
-        }
-
-        private FileMetaData ExtractAudioMetadata(string filePath, string fileName)
-        {
-            var media = new MediaInfoWrapper(filePath);
-
-            return new FileMetaData
+            finally
             {
-                FileName = fileName,
-                Extension = Path.GetExtension(fileName),
-                Duration = TimeSpan.FromMilliseconds(media.Duration),
-                ExtractedDate = DateTime.Now,
-                UploadDate = DateTime.Now, //TODO: Get Date from Box
-                Description = "This is a test real description will come from Box",
-                FolderResponseType = "",
-                ClientEmail = "sjustus@justustechsolutions.com",
-                UploadedBy = "sjustus@justustechsolutions.com"
-
-            };
+                if (System.IO.File.Exists(tempPath))
+                {
+                    try
+                    {
+                        //Remove that file!!!!
+                        System.IO.File.Delete(tempPath);
+                        _logger.LogDebug($"Temporary file deleted: {tempPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error deleting temporary file.");
+                    }
+                }
+            }
         }
 
-
+        JobLog IFileExtraction.ExtractMetadata(string filePath, string fileName)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

@@ -1,9 +1,10 @@
 
 using FileProcessor.Configuration;
-using FileProcessor.Domain;
 using FileProcessor.Interfaces;
+using FileProcessor.Services;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
 
 namespace FileProcessor
 {
@@ -11,7 +12,27 @@ namespace FileProcessor
     {
         public static void Main(string[] args)
         {
+
             var builder = WebApplication.CreateBuilder(args);
+
+            var googleCredentialsPath = "c:\\code\\ditto\\resources\\wif-config.json";
+            GoogleCredentialsConfig googleCredentialsConfig;
+
+            if (File.Exists(googleCredentialsPath))
+            {
+                var jsonContent = File.ReadAllText(googleCredentialsPath);
+                googleCredentialsConfig = JsonConvert.DeserializeObject<GoogleCredentialsConfig>(jsonContent);
+                if (googleCredentialsConfig == null)
+                {
+                    throw new InvalidOperationException("Failed to deserialize Google credentials JSON.");
+                }
+            }
+            else
+            {
+                throw new FileNotFoundException($"Google credentials file not found: {googleCredentialsPath}");
+            }
+
+            
 
             builder.WebHost.ConfigureKestrel(options =>
             {
@@ -22,9 +43,9 @@ namespace FileProcessor
             {
                 options.MultipartBodyLengthLimit = 5368709120; // 5 GB
             });
-                // Add services to the container.
+            // Add services to the container.
 
-                builder.Services.AddControllers();           
+            builder.Services.AddControllers();
 
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
             builder.Services.AddEndpointsApiExplorer();
@@ -32,9 +53,13 @@ namespace FileProcessor
 
             //Register configuration
             builder.Services.Configure<BoxConfig>(builder.Configuration.GetSection("BoxConfig"));
+            builder.Services.Configure<GoogleSheetConfig>(builder.Configuration.GetSection("GoogleSheetConfig"));
+            
+            builder.Services.AddSingleton(googleCredentialsConfig);
 
-            builder.Services.AddScoped<Interfaces.IFileExtraction, Domain.FileExtractor>();
+            builder.Services.AddScoped<IFileExtraction, Domain.FileExtractor>();
             builder.Services.AddScoped<IBoxService, BoxService>();
+            builder.Services.AddScoped<IGoogleSheetsService, GoogleSheetsService>();
 
             var app = builder.Build();
             app.UseMiddleware<RequestLoggingMiddleware>();
@@ -52,7 +77,7 @@ namespace FileProcessor
 
 
             app.MapControllers();
-           
+
             app.Run();
         }
     }

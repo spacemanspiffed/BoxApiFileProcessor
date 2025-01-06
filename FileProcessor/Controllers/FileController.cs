@@ -1,5 +1,4 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using FileProcessor.Entities;
 using MediaInfo;
 using FileProcessor.Models;
 using System.IO;
@@ -9,6 +8,8 @@ using Microsoft.Extensions.Options;
 using Box.Sdk.Gen;
 using Box.Sdk.Gen.Schemas;
 using FileProcessor.Interfaces;
+using FileProcessor.Services;
+using Org.BouncyCastle.Crypto.Asymmetric;
 
 
 namespace FileProcessor.Controllers
@@ -21,14 +22,31 @@ namespace FileProcessor.Controllers
         private readonly Interfaces.IFileExtraction _fileExtractor;
         //private readonly BoxConfig _boxConfig;
         private readonly IBoxService _boxService;
+        private readonly IGoogleSheetsService _googleSheetsService;
+        private readonly GoogleSheetConfig _googleSheetConfig;
 
-        public FileController(ILogger<FileController> logger, Interfaces.IFileExtraction fileExtractor, IBoxService boxService)
+        public FileController(ILogger<FileController> logger, Interfaces.IFileExtraction fileExtractor, IBoxService boxService, IGoogleSheetsService googleSheetsService, IOptions<GoogleSheetConfig> config)
         {
             _logger = logger;
             _fileExtractor = fileExtractor;
             _boxService = boxService;
+            _googleSheetsService = googleSheetsService;
+            _googleSheetConfig = config.Value;
         }
 
+        [HttpGet("username")]
+        public async Task<IActionResult> TestConnection()
+        {
+            try
+            {
+                var user = await _boxService.TestConnectionAsync();
+                return Ok($"Successfully connected to Box. User = {user.Name}");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error connecting to Box: {ex.Message}");
+            }
+        }      
 
 
         [HttpPost("simple")]
@@ -60,9 +78,9 @@ namespace FileProcessor.Controllers
 
                 var metadata = _fileExtractor.ExtractMetadata(request.FilePath, fileName);
 
-                _logger.LogDebug($"Duration: {metadata.Duration}");
+                _logger.LogDebug($"Duration: {metadata.FileLength}");
 
-                if (metadata.Duration == TimeSpan.Zero)
+                if (metadata.FileLength == TimeSpan.Zero)
                 {
                     return BadRequest("Failed to extract duration from media file.");
                 }
@@ -76,91 +94,33 @@ namespace FileProcessor.Controllers
             }
         }
 
-        [HttpPost("boxprocess/{fileId:long}")]
-        public async Task<IActionResult> ProcessFromBox(long fileId)
+        [HttpPost("boxprocess/{fileId}")]
+        public async Task<IActionResult> ProcessFromBox(string fileId)
         {
+
             try
             {
-                //Authenticate with Box and get the file
-
-                var auth = new BoxDeveloperTokenAuth(token: "TTkOZ9h6Nh5JDagr5kiSvrcLoIXfl4U8");
-                var client = new BoxClient(auth: auth);
-
                 var duration = TimeSpan.Zero;
 
-                var listofMetadata = new List<FileMetaData>();
+                FileFull file = await _boxService.GetFileByIdAsync(fileId);
 
-                FileFull file = await client.Files.GetFileByIdAsync(fileId.ToString());
-
-                //Navigate up the file system to the customer
-                var fileHierarchy = _boxService.GetFullPathAsync(file);
-
-
-                System.IO.Stream download = null;
-                try
+                if (file == null)
                 {
-                    download = await client.Downloads.DownloadFileAsync(file.Id);
+                    return NotFound($"File was not found for this Id -- {fileId} --");
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error downloading file.");
-                    return StatusCode(500, "Error downloading file.");
-                }
+                //if (file.SharedLink == null)
+                //{
+                //    file = await _boxService.CreateSharedLinkAsync(file);
+                //}
 
-                // Ensure the download is complete and pass the stream to MediaInfoWrapper 
-                string tempPath = null;
-                try
-                {
-                    tempPath = Path.Combine(Path.GetTempPath(), file.Name);
-                    using (var filestream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-                    {
-                        await download.CopyToAsync(filestream);
-                    }
-                    _logger.LogInformation($"File Downloaded and saved to temp location");
-                    var mediaInfoWrapper = new MediaInfoWrapper(tempPath, _logger);
-                    _logger.LogDebug($"Duration: {mediaInfoWrapper.Duration}");
+                var fullPath = await _boxService.GetFullPathAsync(file);
 
-                    //set it for distribution!
-                    duration = TimeSpan.FromMilliseconds(mediaInfoWrapper.Duration);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error processing file with MediaInfoWrapper.");
-                    return StatusCode(500, "Error processing file.");
-                }
-                finally
-                {
-                    // Ensure the temporary file is deleted
-                    if (tempPath != null && System.IO.File.Exists(tempPath))
-                    {
-                        try
-                        {
-                            System.IO.File.Delete(tempPath);
-                            _logger.LogDebug($"Temporary file deleted: {tempPath}");
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Error deleting temporary file.");
-                        }
-                    }
-                }
+                var fileMetaData = await _fileExtractor.CreateFileMetaData(file, fullPath);
 
-                var crap = new FileMetaData
-                {
-                    ClientEmail = file.CreatedBy?.Id ?? "N/A",
-                    FileName = file.Name,
-                    Description = file.Description,
-                    Duration = duration,
-                    Extension = file.Extension,
-                    ExtractedDate = DateTime.Now,
-                    UploadDate = DateTime.Now,
-                    UploadedBy = file.UploaderDisplayName,
-                    FolderResponseType = "what"
-                };
-                listofMetadata.Add(crap);
+                await _googleSheetsService.AppendToSheetAsync(spreadsheetId: _googleSheetConfig.SheetId, jobLog: fileMetaData);
 
+                return Ok(fileMetaData);
 
-                return Ok(listofMetadata);
             }
 
             catch (Exception ex)
@@ -171,7 +131,8 @@ namespace FileProcessor.Controllers
 
             }
 
-        }
+        }      
+        
     }
 
 }
