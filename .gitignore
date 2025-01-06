@@ -17,3 +17,5 @@ obj/
 secrets.json
 appsettings.json
 appsettings.development.json
+appsettings.Development.json
+/FileProcessor/appsettings.Development.json
