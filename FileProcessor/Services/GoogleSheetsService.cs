@@ -21,32 +21,24 @@ namespace FileProcessor.Services
         Rushed,
         Standard,
         Extended
-    }    
+    }
     public class GoogleSheetsService : IGoogleSheetsService
     {
 
 
-        private readonly string _serviceAccountKeyPath = "C:\\code\\Ditto\\resources\\dittointakesheet-key.json";
+
         private SheetsService _sheetsService;
 
+        private readonly ILogger<GoogleSheetsService> _logger;
+        private readonly GoogleSheetsCredentials _credentials;
+        private readonly GoogleSheetConfig _sheetConfig;
         public static List<ClientTemplate> _templateCache = new List<ClientTemplate>();
         public static List<string> _clientListCache = new List<string>();
-        private readonly ILogger<GoogleSheetsService> _logger;
-        private readonly GoogleCredentialsConfig _config;
-        private readonly GoogleSheetConfig _sheetConfig;
 
-        public GoogleSheetsService(GoogleCredentialsConfig googleCredentialsConfig, ILogger<GoogleSheetsService> logger, IOptions<GoogleSheetConfig> sheetConfig)
+        public GoogleSheetsService(GoogleSheetsCredentials googleCredentialsConfig, ILogger<GoogleSheetsService> logger, IOptions<GoogleSheetConfig> sheetConfig)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _config = googleCredentialsConfig ?? throw new ArgumentNullException(nameof(googleCredentialsConfig));
-
-            //_logger.LogInformation($"UniverseDomain: {_config.UniverseDomain}");
-            //_logger.LogInformation($"Credential File Path: {_config.CredentialSource.File}");
-            //_logger.LogInformation($"Token URL: {_config.TokenUrl}");
-
-            //_logger.LogInformation($"ServiceAccountImpersonationUrl: {_config.ServiceAccountImpersonationUrl}");
-            //_logger.LogInformation($"Audience: {_config.Audience}");
-            //_logger.LogInformation($"Credential Source File: {_config.CredentialSource.File}");
+            _credentials = googleCredentialsConfig ?? throw new ArgumentNullException(nameof(googleCredentialsConfig));
 
             _sheetConfig = sheetConfig.Value;
 
@@ -59,17 +51,17 @@ namespace FileProcessor.Services
 
             try
             {
-                using (var stream = new FileStream(_serviceAccountKeyPath, FileMode.Open, FileAccess.Read))
-                {
-                    var credential = GoogleCredential.FromStream(stream)
-                        .CreateScoped(SheetsService.Scope.Spreadsheets);
-                    _sheetsService = new SheetsService(new BaseClientService.Initializer
-                    {
-                        HttpClientInitializer = credential,
-                        ApplicationName = "FileProcessor App"
-                    });
 
-                }                          
+                var credentialsJson = JsonConvert.SerializeObject(_credentials);
+                var credential = GoogleCredential.FromJson(credentialsJson)
+                        .CreateScoped(SheetsService.Scope.Spreadsheets);
+                _sheetsService = new SheetsService(new BaseClientService.Initializer
+                {
+                    HttpClientInitializer = credential,
+                    ApplicationName = "FileProcessor App"
+                });
+
+
 
                 await CacheTemplatesAsync(_sheetConfig.SheetId, _sheetConfig.Customers);
 
@@ -143,7 +135,7 @@ namespace FileProcessor.Services
             {
                 rowsToAppend.Add(columnHeaders);
             }
-            
+
             if (columnHeaders.Count != jobLog.ConvertToValues().Count)
             {
                 throw new InvalidOperationException("Mismatch between column headers and JobLog values.");

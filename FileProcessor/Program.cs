@@ -1,10 +1,14 @@
 
 using FileProcessor.Configuration;
+using FileProcessor.Domain;
 using FileProcessor.Interfaces;
 using FileProcessor.Services;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
+using Microsoft.Extensions.Logging.AzureAppServices;
 
 namespace FileProcessor
 {
@@ -15,24 +19,61 @@ namespace FileProcessor
 
             var builder = WebApplication.CreateBuilder(args);
 
-            var googleCredentialsPath = "c:\\code\\ditto\\resources\\wif-config.json";
-            GoogleCredentialsConfig googleCredentialsConfig;
+            var keyVaultUri = "https://dittovault.vault.azure.net/";
 
-            if (File.Exists(googleCredentialsPath))
+            builder.Logging.ClearProviders();
+            builder.Logging.AddConsole();
+            builder.Logging.AddAzureWebAppDiagnostics(); // Enables logging for Azure App Service
+            builder.Services.Configure<AzureFileLoggerOptions>(options =>
             {
-                var jsonContent = File.ReadAllText(googleCredentialsPath);
-                googleCredentialsConfig = JsonConvert.DeserializeObject<GoogleCredentialsConfig>(jsonContent);
-                if (googleCredentialsConfig == null)
-                {
-                    throw new InvalidOperationException("Failed to deserialize Google credentials JSON.");
-                }
-            }
-            else
+                options.FileName = "azure-diagnostics-";
+                options.FileSizeLimit = 50 * 1024; // 50 KB per log file
+                options.RetainedFileCountLimit = 5; // Retain 5 log files
+            });
+            builder.Services.Configure<AzureBlobLoggerOptions>(options =>
             {
-                throw new FileNotFoundException($"Google credentials file not found: {googleCredentialsPath}");
-            }
+                options.BlobName = "log.txt";
+            });
 
+            var clientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID");
+            var tenant = Environment.GetEnvironmentVariable("AZURE_TENANT_ID");
+            var sec = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
+
+            //var keyVaultCredential = new AzureCliCredential();
+
+            var credentialOptions = new DefaultAzureCredentialOptions
+            {
+                AdditionallyAllowedTenants = { "*" }
+            };
             
+            builder.Configuration.AddAzureKeyVault(new Uri(keyVaultUri), new DefaultAzureCredential(credentialOptions));
+
+            //var googleCredentialsPath = "c:\\code\\ditto\\resources\\wif-config.json";
+            //GoogleCredentialsConfig googleCredentialsConfig;
+
+            builder.Logging.AddConsole();
+            
+            //Google and Box Credentials from Keyvault
+            var googleSheetsJson = builder.Configuration["GoogleSheetsCredentials"];
+            if (string.IsNullOrEmpty(googleSheetsJson))
+            {
+                throw new Exception("Google Sheets credentials not found in Key Vault");
+            }
+            GoogleSheetsCredentials googleCredentialsConfig = JsonConvert.DeserializeObject<GoogleSheetsCredentials>(googleSheetsJson);
+
+            builder.Services.AddSingleton(googleCredentialsConfig);
+
+            var boxConfigJson = builder.Configuration["BoxConfig"];
+            if (string.IsNullOrEmpty(boxConfigJson))
+            {
+                throw new Exception("Box config not found in Key Vault");
+            }
+            var boxConfig = JsonConvert.DeserializeObject<BoxConfig>(boxConfigJson);
+
+            builder.Services.AddSingleton(boxConfig);
+            
+            //Google Sheet and Sheet info from json
+            builder.Services.Configure<GoogleSheetConfig>(builder.Configuration.GetSection("GoogleSheetConfig"));
 
             builder.WebHost.ConfigureKestrel(options =>
             {
@@ -52,32 +93,28 @@ namespace FileProcessor
             builder.Services.AddSwaggerGen();
 
             //Register configuration
-            builder.Services.Configure<BoxConfig>(builder.Configuration.GetSection("BoxConfig"));
-            builder.Services.Configure<GoogleSheetConfig>(builder.Configuration.GetSection("GoogleSheetConfig"));
+            //builder.Services.Configure<BoxConfig>(builder.Configuration.GetSection("BoxConfig"));
             
-            builder.Services.AddSingleton(googleCredentialsConfig);
+            
+            //builder.Services.AddSingleton(googleCredentialsConfig);
 
             builder.Services.AddScoped<IFileExtraction, Domain.FileExtractor>();
             builder.Services.AddScoped<IBoxService, BoxService>();
             builder.Services.AddScoped<IGoogleSheetsService, GoogleSheetsService>();
+            builder.Services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
+
+            builder.Services.AddHostedService<BackgroundTaskHostedService>();
 
             var app = builder.Build();
             app.UseMiddleware<RequestLoggingMiddleware>();
 
             // Configure the HTTP request pipeline.
-            if (app.Environment.IsDevelopment())
-            {
-                app.UseSwagger();
-                app.UseSwaggerUI();
-            }
+            app.UseSwagger();
+            app.UseSwaggerUI();            
 
             app.UseHttpsRedirection();
-
             app.UseAuthorization();
-
-
             app.MapControllers();
-
             app.Run();
         }
     }

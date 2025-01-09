@@ -3,6 +3,8 @@ using Box.Sdk.Gen.Managers;
 using Box.Sdk.Gen.Schemas;
 using FileProcessor.Configuration;
 using FileProcessor.Interfaces;
+using FileProcessor.Models;
+using Google.Apis.Auth.OAuth2;
 using Microsoft.Extensions.Options;
 
 namespace FileProcessor.Services
@@ -11,13 +13,14 @@ namespace FileProcessor.Services
     {
         private readonly BoxClient _client;
         private readonly ILogger<BoxService> _logger;
+        private readonly BoxConfig _boxConfig;
 
-        public BoxService(IOptions<BoxConfig> boxConfigOptions, ILogger<BoxService> logger)
+        public BoxService(BoxConfig boxConfig, ILogger<BoxService> logger)
         {
             _logger = logger;
 
             // Load configuration
-            var boxConfig = boxConfigOptions.Value;
+            _boxConfig = boxConfig;
 
             // Initialize BoxClient using Box.Sdk.Gen
             _client = CreateBoxClient(boxConfig);
@@ -27,24 +30,25 @@ namespace FileProcessor.Services
         {
             try
             {
-                var jwtAuthConfig = new JwtConfig(
-                    clientId: boxConfig.ClientId,
-                    clientSecret: boxConfig.ClientSecret,
-                    jwtKeyId: boxConfig.JwtKeyId,
-                    privateKey: boxConfig.PrivateKey,
-                    privateKeyPassphrase: boxConfig.Passphrase)
+                //****** this is the config for the new service!!!!!!!!!!!!!!!!  MOVE TO FILE!!!!!
+
+                var config = new CcgConfig(clientId: _boxConfig.ClientId, clientSecret: _boxConfig.ClientSecret)
                 {
-                    UserId = boxConfig.UserId
+                    EnterpriseId = "437569",
                 };
+                //var config = new CcgConfig(clientId: "jvdmdnahv9fnllgxf8e3jeg0kbok366d", clientSecret: "kdiMXMslKpcaxmq7on9CeheAKQcoLG7G")
+                //{
+                //    EnterpriseId = "437569",
+                    
+                //};
 
-                // **** Use the JWT config to authenticate and create the BoxClient
-                //var jwtAuth = new BoxJwtAuth(jwtAuthConfig);
-                //var userToken = jwtAuth.RetrieveTokenAsync().Result; // Admin token for enterprise access
-                //var client = new BoxClient(new BoxDeveloperTokenAuth(userToken.AccessTokenField));
+                var auth = new BoxCcgAuth(config);               
+                
+                auth.GetType();
 
-                //Developer Token Path
-                var auth = new BoxDeveloperTokenAuth(token: "uKAvLoAK7OniOCgYM7ZUCIY59ITkZWXI");
-                var client = new BoxClient(auth: auth);
+                auth.RetrieveTokenAsync().Wait();                
+
+                var client = new BoxClient(auth: auth);               
                 
                 _logger.LogInformation("Successfully authenticated Box client.");
                 return client;
@@ -120,7 +124,7 @@ namespace FileProcessor.Services
                     if (folder == null)
                     {
                         throw new Exception("Folder not found.");
-                    }
+                    }                  
 
                     fullPath.Add(folder.Name);
 
@@ -142,10 +146,46 @@ namespace FileProcessor.Services
             return await _client.SharedLinksFiles.AddShareLinkToFileAsync(file.Id, 
                 requestBody: new AddShareLinkToFileRequestBody() 
                 {SharedLink = new AddShareLinkToFileRequestBodySharedLinkField() {Access = AddShareLinkToFileRequestBodySharedLinkAccessField.Company}},
-                queryParams: new AddShareLinkToFileQueryParams(fields: "shared_link" ));
-
-            
+                queryParams: new AddShareLinkToFileQueryParams(fields: "shared_link" ));            
            
+        }
+
+        public async Task<Box.Sdk.Gen.Schemas.Webhook> CreateWebHookAsync(string folderId)
+        {
+           var response = await _client.Webhooks.CreateWebhookAsync(requestBody: 
+                                 new CreateWebhookRequestBody(target: 
+                                 new CreateWebhookRequestBodyTargetField()
+                                    { 
+                                     Id = folderId,
+                                     Type = CreateWebhookRequestBodyTargetTypeField.Folder
+                                    },
+                                address: "https://mighty-reindeer-thoroughly.ngrok-free.app/file/webhook",
+                                triggers: Array.AsReadOnly(new[] 
+                                { 
+                                    new StringEnum<CreateWebhookRequestBodyTriggersField>(CreateWebhookRequestBodyTriggersField.FileUploaded)
+                                })));
+
+            return response;
+        }
+
+        public async Task<Webhooks> GetWebhooksAsync()
+        {
+            var response = await _client.Webhooks.GetWebhooksAsync();
+            return response;
+        }
+
+        public async Task<Folder> GetFolderByIdAsync(string folderId)
+        {
+            FolderFull folder = await _client.Folders.GetFolderByIdAsync(folderId);
+            return folder;
+        }
+
+        public async Task<bool> WebhookForFolderExists(string folderId)
+        {
+            var webhooks = await _client.Webhooks.GetWebhooksAsync();
+            var webhookExists = webhooks.Entries.Any(webhook =>
+                webhook.Target?.Id == folderId && webhook.Type.StringValue == "Folder");
+            return webhookExists;
         }
     }
 }

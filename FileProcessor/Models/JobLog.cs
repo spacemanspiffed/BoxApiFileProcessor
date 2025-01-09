@@ -47,7 +47,7 @@
             Category,
             FileName,
             FileLink != null ? $"=HYPERLINK(\"{FileLink}\", \"Link\")" : null, // File Link column
-            DateReceived != default ? DateReceived.ToString("yyyy-MM-dd") : null,
+            DateReceived != default ? DateReceived.ToString("ddd dd-MM") : null,
             ICDueDate != default ? ICDueDate.ToString("yyyy-MM-dd") : null,
             FinalDueDate != default ? FinalDueDate.ToString("yyyy-MM-dd") : null,
             SpecialDueDate != default ? SpecialDueDate.ToString("yyyy-MM-dd") : null,
