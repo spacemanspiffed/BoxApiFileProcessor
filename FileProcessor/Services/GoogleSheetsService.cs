@@ -111,12 +111,12 @@ namespace FileProcessor.Services
             // Define column headers
             var columnHeaders = new List<object>
         {
-            "Status", "QA Date", "Client", "Template", "Category", "File Name",
+            "Status", "QA Date","UploadedBy", "Client", "Template", "Category", "File Name",
             "File Link", "Date Received", "IC Due Date", "Final Due Date", "Special Due Date",
             "Returned", "Transcriptionist", "Duration", "Minutes", "TAT",
             "Number of Speakers", "Verbatim or Timestamps","TT", "Type", "IC Rate", "IC Total",
             "Rate", "Pricing", "Special Rate", "Special Template", "Feedback",
-            "Notes and Comments"
+            "Notes and Comments", "FileId"
         };
 
 
@@ -155,19 +155,26 @@ namespace FileProcessor.Services
 
         public async Task CacheTemplatesAsync(string spreadsheetId, string range)
         {
-            if (_templateCache.Count == 0)
-            {
-                // Read the data and cache it as a List<ClientTemplate>
-                _templateCache = await ReadTemplateSheet(spreadsheetId, range);
-            }
+            //****When we are ready to reintroduce caching uncomment these lines and comment the lines below!!!!****
 
-            if (_clientListCache.Count == 0)
-            {
-                // Cache the list of Client names separately
-                _clientListCache = _templateCache
-                    .Select(template => template.ClientName)
-                    .ToList();
-            }
+            //if (_templateCache.Count == 0)
+            //{
+            //    // Read the data and cache it as a List<ClientTemplate>
+            //    _templateCache = await ReadTemplateSheet(spreadsheetId, range);
+            //}
+
+            //if (_clientListCache.Count == 0)
+            //{
+            //    // Cache the list of Client names separately
+            //    _clientListCache = _templateCache
+            //        .Select(template => template.ClientName)
+            //        .ToList();
+            //}
+
+            _templateCache = await ReadTemplateSheet(spreadsheetId, range);
+            _clientListCache = _templateCache
+                .Select(template => template.ClientName)
+                .ToList();
         }
 
         public static Hyperlink GetTemplateForClient(string clientName)
@@ -241,87 +248,113 @@ namespace FileProcessor.Services
             }
 
             return clientTemplates;
+           
+        }
+       
 
-            //var request = _sheetsService.Spreadsheets.Values.Get(spreadsheetId, range);
+        public async Task<List<string>> GetIgnoredFileTypes()
+        {
+            var sheetId = _sheetConfig.SheetId;
+            var range = _sheetConfig.IgnoredFileTypes;
+            _logger.LogInformation($"Looking for this spreadsheet {sheetId}, and this range -- {range}");
+            if (string.IsNullOrWhiteSpace(sheetId))
+                throw new ArgumentException("Spreadsheet ID cannot be null or empty.");
+            if (string.IsNullOrWhiteSpace(range))
+                throw new ArgumentException("Range cannot be null or empty.");
+            
+            var request = _sheetsService.Spreadsheets.Values.Get(sheetId, range);
 
-            //var response = await request.ExecuteAsync();
+            try
+            {
+                ValueRange response = await request.ExecuteAsync();
+                var values = response.Values;
 
-            // Process response
-            //if (response.Values == null || !response.Values.Any())
-            //{
-            //    Console.WriteLine("No data found in the specified range.");
+                if (values == null || values.Count == 0)
+                {
+                    Console.WriteLine("No data found in the 'Ignored_Types' tab.");
+                    return new List<string>();
+                }
 
-            //}
-            //foreach (var row in response.Values)
-            //{
-            //    // Handle rows and map hyperlink text and URLs manually
-            //    var clientName = row.ElementAtOrDefault(0)?.ToString() ?? "No Client";
-            //    var templateValue = row.ElementAtOrDefault(1)?.ToString() ?? "No Template";
+                // Convert the data to a list of strings
+                var ignoredTypes = new List<string>();
+                foreach (var row in values)
+                {
+                    if (row.Count > 0 && row[0] is string cellValue)
+                    {
+                        ignoredTypes.Add(cellValue.Trim()); // Trim whitespace
+                    }
+                }
 
+                return ignoredTypes;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error fetching data from Google Sheets: {ex.Message}");
+                throw;
+            }
 
-            //    // Attempt to parse hyperlink formula if present
-            //    string hyperlinkUrl = ExtractHyperlink(templateValue, out string hyperlinkText);
-
-            //    Console.WriteLine($"Client: {clientName}, Template Text: {hyperlinkText}, URL: {hyperlinkUrl}");
-
-
-
-
-            //return null;
         }
 
-        private string ExtractHyperlink(string cellValue, out string hyperlinkText)
+        public async Task ExpireCache()
         {
-            // Default values
-            string hyperlinkUrl = ""; // Define hyperlinkUrl here
-            hyperlinkText = cellValue;
+            _logger.LogInformation("Expiring cache...");
+            _templateCache.Clear();
+             _clientListCache.Clear();
+            await CacheTemplatesAsync(_sheetConfig.SheetId, _sheetConfig.Customers);
+        }
 
-            string pattern = @"=HYPERLINK\(\s*(""([^""]+)"")?\s*,\s*(""([^""]+)"")?\s*\)"; // Matches =HYPERLINK("URL", "Text")
-            Match match = Regex.Match(cellValue, pattern, RegexOptions.IgnoreCase);
+        public async Task<List<string>> GetUploadedFiles()
+        {
+            var headerName = "FileId";
+            var headerRange = $"{_sheetConfig.JobLog}!1:1";
+            var headerRequest = _sheetsService.Spreadsheets.Values.Get(_sheetConfig.SheetId, headerRange);
 
-            if (match.Success)
+            var headerResponse = await headerRequest.ExecuteAsync();
+
+            var headers = headerResponse.Values?[0];
+
+            if (headers == null || !headers.Contains(headerName))
             {
-                hyperlinkUrl = match.Groups[1].Value;  // Extract the URL
-                hyperlinkText = match.Groups[2].Value; // Extract the link text
-            }
-            else
-            {
-                // If no HYPERLINK formula, try to detect a plain URL
-                pattern = @"^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$";
-                match = Regex.Match(cellValue, pattern, RegexOptions.IgnoreCase);
-
-                if (match.Success)
-                {
-                    hyperlinkUrl = match.Value; // The cell value is the URL
-                }
-                else
-                {
-                    hyperlinkUrl = ""; // No URL found
-                }
+                throw new ArgumentException($"Header '{headerName}' not found in sheet '{_sheetConfig.JobLog}'.");
             }
 
-            return hyperlinkUrl;
-            //if (string.IsNullOrEmpty(cellValue) || !cellValue.StartsWith("=HYPERLINK("))
-            //    return null;
+            var columnIndex = headers.IndexOf(headerName); // 0-based index
 
-            //try
-            //{
-            //    // Parse formula: =HYPERLINK("URL", "Text")
-            //    int startUrl = cellValue.IndexOf('"') + 1;
-            //    int endUrl = cellValue.IndexOf('"', startUrl);
-            //    string url = cellValue.Substring(startUrl, endUrl - startUrl);
+            // Convert the column index to A1 notation
+            var columnLetter = ConvertIndexToColumnLetter(columnIndex);
 
-            //    int startText = cellValue.IndexOf('"', endUrl + 1) + 1;
-            //    int endText = cellValue.LastIndexOf('"');
-            //    hyperlinkText = cellValue.Substring(startText, endText - startText);
+            // Fetch the entire column data
+            var columnRange = $"{_sheetConfig.JobLog}!{columnLetter}:{columnLetter}";
+            var columnRequest = _sheetsService.Spreadsheets.Values.Get(_sheetConfig.SheetId, columnRange);
+            var columnResponse = await columnRequest.ExecuteAsync();
 
-            //    return url;
-            //}
-            //catch
-            //{
-            //    // Return null if parsing fails
-            //    return null;
-            //}
+            // Process the column data (skip the header row)
+            var columnData = new List<string>();
+            foreach (var row in columnResponse.Values?.Skip(1) ?? new List<IList<object>>())
+            {
+                if (row.Count > 0 && row[0] is string cellValue)
+                {
+                    columnData.Add(cellValue.Trim()); // Trim whitespace
+                }
+            }
+
+            return columnData;
+
+        }
+
+        private string ConvertIndexToColumnLetter(int index)
+        {
+            string column = string.Empty;
+            index++; // Convert to 1-based index
+
+            while (index > 0)
+            {
+                index--;
+                column = (char)('A' + (index % 26)) + column;
+                index /= 26;
+            }
+
+            return column;
         }
     }
 

@@ -9,5 +9,8 @@ namespace FileProcessor.Interfaces
         Task<IList<IList<object>>> ReadSheetAsync(string spreadsheetId, string range);
         Task AppendToSheetAsync(string spreadsheetId, JobLog jobLog);
         Task TestConnectionAsync(string spreadsheetId, string range = "A1");
+        Task<List<string>> GetIgnoredFileTypes();
+        Task ExpireCache();
+        public Task<List<string>> GetUploadedFiles();
     }
 }

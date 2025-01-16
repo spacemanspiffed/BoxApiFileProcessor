@@ -4,8 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace FileProcessor.Controllers
 {
-  
-    
+
+
 
     [Route("api/[controller]")]
     [ApiController]
@@ -33,6 +33,51 @@ namespace FileProcessor.Controllers
             {
                 _logger.LogError(ex, "Google Sheets connection test failed.");
                 return StatusCode(500, "Failed to connect to Google Sheets.");
+            }
+        }
+
+        [HttpPost("ExpireCache")]
+        public async Task<IActionResult> ExpireCustomerCache()
+        {
+            try
+            {
+                await _googleSheetsService.ExpireCache();
+                return Ok("Cache expired successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error expiring cache.");
+                return StatusCode(500, "Error expiring cache.");
+            }
+        }
+
+        [HttpGet("IgnoredTypes")]
+        public async Task<IActionResult> GetIgnoredFileTypes()
+        {
+            try
+            {
+                var ignoredTypes = await _googleSheetsService.GetIgnoredFileTypes();
+                return Ok(ignoredTypes);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting ignored file types.");
+                return StatusCode(500, "Error getting ignored file types.");
+            }
+        }
+
+        [HttpGet("UploadedFiles")]
+        public async Task<IActionResult> GetUploadedFiles()
+        {
+            try
+            {
+                var uploadedFiles = await _googleSheetsService.GetUploadedFiles();
+                return Ok(uploadedFiles);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting uploaded files.");
+                return StatusCode(500, "Error getting uploaded files.");
             }
         }
     }

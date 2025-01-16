@@ -159,7 +159,7 @@ namespace FileProcessor.Services
                                      Id = folderId,
                                      Type = CreateWebhookRequestBodyTargetTypeField.Folder
                                     },
-                                address: "https://mighty-reindeer-thoroughly.ngrok-free.app/file/webhook",
+                                address: "https://dittointakeapplication.azurewebsites.net/file/webhook",
                                 triggers: Array.AsReadOnly(new[] 
                                 { 
                                     new StringEnum<CreateWebhookRequestBodyTriggersField>(CreateWebhookRequestBodyTriggersField.FileUploaded)
@@ -187,5 +187,20 @@ namespace FileProcessor.Services
                 webhook.Target?.Id == folderId && webhook.Type.StringValue == "Folder");
             return webhookExists;
         }
+
+        public async Task<FileVersions> GetFileVersionsAsync(string fileId)
+        {
+            var response = await _client.FileVersions.GetFileVersionsAsync(fileId);
+            return response;
+        }
+        public async Task<FileVersion> GetFileVersionAsync(string fileId, string fileVersionId)
+        {
+            var response = await _client.FileVersions.GetFileVersionByIdAsync(fileId, fileVersionId);
+            return response;
+        }
+        
+
+
+
     }
 }

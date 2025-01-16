@@ -4,8 +4,9 @@
     {
         public string Status { get; set; }
         public string QADate { get; set; }
+        public string UploadedBy { get; set; }
         public string Client { get; set; }
-        public Hyperlink Template { get; set; }
+        public Hyperlink Template { get; set; }       
         public string Category { get; set; } = "General";
         public string FileName { get; set; }
         public string FileLink { get; set; }
@@ -32,6 +33,7 @@
         public Hyperlink SpecialTemplate { get; set; } = null;
         public string Feedback { get; set; } = null;
         public string NotesAndComments { get; set; } = null;
+        public string FileId { get; set; } = null;
 
         /// <summary>
         /// Converts the JobLog object to a Google Sheets-compatible row.
@@ -42,12 +44,13 @@
         {
             Status,
             QADate,
+            UploadedBy,
             Client,
-            Template != null ? $"=HYPERLINK(\"{Template.Url}\", \"{Template.Text}\")" : null, // Template column
+            Template != null ? $"=HYPERLINK(\"{Template.Url}\", \"{Template.Text}\")" : null, // Template column            
             Category,
             FileName,
             FileLink != null ? $"=HYPERLINK(\"{FileLink}\", \"Link\")" : null, // File Link column
-            DateReceived != default ? DateReceived.ToString("ddd dd-MM") : null,
+            DateReceived != default ? DateReceived.ToString("ddd MM-dd") : null,
             ICDueDate != default ? ICDueDate.ToString("yyyy-MM-dd") : null,
             FinalDueDate != default ? FinalDueDate.ToString("yyyy-MM-dd") : null,
             SpecialDueDate != default ? SpecialDueDate.ToString("yyyy-MM-dd") : null,
@@ -58,7 +61,7 @@
             JobLogValidator.ValidateTAT(TAT),
             NumberOfSpeakers,             // Null if not set
             VerbatimOrTimestamps,         // Null if not set
-            TT, 
+            TT,
             Type,
             ICRate?.ToString("F2"),       // Null if not set
             ICTotal?.ToString("F2"),      // Null if not set
@@ -67,7 +70,8 @@
             SpecialRate?.ToString("F2"),  // Null if not set
             SpecialTemplate != null ? $"=HYPERLINK(\"{SpecialTemplate.Url}\", \"{SpecialTemplate.Text}\")" : null,
             Feedback,
-            NotesAndComments
+            NotesAndComments,
+            FileId
         };
         }
     }

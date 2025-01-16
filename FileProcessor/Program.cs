@@ -39,6 +39,8 @@ namespace FileProcessor
             var tenant = Environment.GetEnvironmentVariable("AZURE_TENANT_ID");
             var sec = Environment.GetEnvironmentVariable("AZURE_CLIENT_SECRET");
 
+            builder.Services.AddApplicationInsightsTelemetry();
+
             //var keyVaultCredential = new AzureCliCredential();
 
             var credentialOptions = new DefaultAzureCredentialOptions
@@ -71,8 +73,9 @@ namespace FileProcessor
             var boxConfig = JsonConvert.DeserializeObject<BoxConfig>(boxConfigJson);
 
             builder.Services.AddSingleton(boxConfig);
-            
+
             //Google Sheet and Sheet info from json
+            builder.Configuration.AddEnvironmentVariables();            
             builder.Services.Configure<GoogleSheetConfig>(builder.Configuration.GetSection("GoogleSheetConfig"));
 
             builder.WebHost.ConfigureKestrel(options =>

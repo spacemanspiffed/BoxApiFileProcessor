@@ -11,6 +11,7 @@ using FileProcessor.Interfaces;
 using FileProcessor.Services;
 using Org.BouncyCastle.Crypto.Asymmetric;
 using Newtonsoft.Json;
+using FileProcessor.Domain;
 
 
 namespace FileProcessor.Controllers
@@ -118,33 +119,74 @@ namespace FileProcessor.Controllers
             {
                 var duration = TimeSpan.Zero;
 
-                FileFull file = await _boxService.GetFileByIdAsync(fileId);
+                //FileFull file = await _boxService.GetFileByIdAsync(fileId);
 
-                if (file == null)
+                //var folder = await _boxService.GetFolderByIdAsync(file.Parent.Id);
+
+                //var fileVersions = await _boxService.GetFileVersionsAsync(fileId);
+
+                //var fileVersion = await _boxService.GetFileVersionAsync(fileId, file.FileVersion.Id);
+
+
+                var fileDetails = await _boxService.GetFileByIdAsync(fileId);
+
+                if (fileDetails != null)
                 {
-                    return NotFound($"File was not found for this Id -- {fileId} --");
+                    _logger.LogInformation("Processing file: {FileName}", fileDetails.Name);
+
+                    var fileTypesToIgnore = await _googleSheetsService.GetIgnoredFileTypes();
+
+                    if (fileTypesToIgnore != null && fileDetails.Extension != null)
+                    {
+                        if (fileTypesToIgnore.IndexOf(fileDetails.Extension, (int)StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            _logger.LogWarning($"This file type is in the ignore list and should be skipped. https://dittotranscripts.app.box.com/file/{fileId}");
+                            return BadRequest("This file type is ignored");
+                        }
+                    }
+
+                    var fullPath = await _boxService.GetFullPathAsync(fileDetails);
+
+                    if (fullPath == null || !fullPath.Any())
+                    {
+                        _logger.LogWarning($"The Full Path for {fileId} is null or empty.  Please check the file in Box.com at https://dittotranscripts.app.box.com/file/{fileId}");
+                        return BadRequest("FilePath is null for this file");
+                    }
+
+                    var ignoreKeywords = new List<string> { "Archive", "Completed Transcripts" };
+
+                    if (fullPath.Any(path =>
+                        !string.IsNullOrWhiteSpace(path) &&
+                        ignoreKeywords.Any(keyword =>
+                            path.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)))
+                    {
+                        _logger.LogWarning($"This file was uploaded to an archive folder or a completed transcripts folder and should be ignored. https://dittotranscripts.app.box.com/file/{fileId}");
+                        return BadRequest("This file is in an archive or completed transcipts folder");
+                    }
+                    var uploadedFiles = await _googleSheetsService.GetUploadedFiles();
+                    if (uploadedFiles != null && uploadedFiles.Contains(fileId))
+                    {
+                        _logger.LogWarning($"This file has already been processed and should be skipped. https://dittotranscripts.app.box.com/file/{fileId}");
+                        return BadRequest($"This file has already been processed and should be skipped. https://dittotranscripts.app.box.com/file/{fileId}");
+                    }
+
+                    var fileMetaData = await _fileExtractor.CreateFileMetaData(fileDetails, fullPath);
+
+                    await _googleSheetsService.AppendToSheetAsync(_googleSheetConfig.SheetId, fileMetaData);
+
+                    _logger.LogInformation("File processing completed for: {FileName}", fileDetails.Name);
+
+                    return Ok(fileMetaData);
                 }
-                //if (file.SharedLink == null)
-                //{
-                //    file = await _boxService.CreateSharedLinkAsync(file);
-                //}
-
-                var fullPath = await _boxService.GetFullPathAsync(file);
-
-                var fileMetaData = await _fileExtractor.CreateFileMetaData(file, fullPath);
-
-                await _googleSheetsService.AppendToSheetAsync(spreadsheetId: _googleSheetConfig.SheetId, jobLog: fileMetaData);
-
-                return Ok(fileMetaData);
-
+                else
+                {
+                    return BadRequest("File not found");
+                }
             }
-
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing file.");
                 return StatusCode(500, "Internal server error.");
-
-
             }
 
         }

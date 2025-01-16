@@ -28,10 +28,10 @@ namespace FileProcessor.Domain
             var hyperLinkToClientTemplate = matchedClient != null ? GoogleSheetsService.GetTemplateForClient(matchedClient) : null;
 
             //Per Alec -- If the client name is null we can go with the email address of the uploader
-            if (matchedClient == null)
-            {
-                matchedClient = file.CreatedBy.Login;
-            }
+            //if (matchedClient == null)
+            //{
+            //    matchedClient = file.CreatedBy.Login;
+            //}
 
             var folderResponseType = GetFolderResponseType(fullPath);           
 
@@ -45,17 +45,17 @@ namespace FileProcessor.Domain
 
             return new JobLog
             {
-                Client = matchedClient,
-                Template = hyperLinkToClientTemplate,
+                Client = matchedClient ?? "",
+                UploadedBy = file.CreatedBy.Login,
                 Category = category,
                 FileName = file.Name,
                 FileLink = linkUrl,
                 DateReceived = TimeZoneInfo.ConvertTime(file.CreatedAt?.UtcDateTime ?? DateTime.UtcNow,
                                            TimeZoneInfo.FindSystemTimeZoneById("Mountain Standard Time")),
-                FileLength = duration,
-                Minutes = duration.TotalMinutes,
+                FileLength = duration,                
                 TAT = folderResponseType,
-                NotesAndComments = file.Description
+                NotesAndComments = file.Description,
+                FileId = file.Id
             };
 
         }        
@@ -151,6 +151,7 @@ namespace FileProcessor.Domain
                     category = "General";
                     break;
                 default:
+                    category = "General";
                     break;
             }
             return category;

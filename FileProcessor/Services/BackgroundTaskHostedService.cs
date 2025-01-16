@@ -66,7 +66,41 @@ namespace FileProcessor.Services
                 {
                     _logger.LogInformation("Processing file: {FileName}", fileDetails.Name);
 
+                    var fileTypesToIgnore = await googleSheetsService.GetIgnoredFileTypes();
+
+                    if (fileTypesToIgnore != null && fileDetails.Extension != null)
+                    {
+                        if (fileTypesToIgnore.IndexOf(fileDetails.Extension, (int)StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            _logger.LogWarning($"This file type is in the ignore list and should be skipped. https://dittotranscripts.app.box.com/file/{fileId}");
+                            return;
+                        }
+                    }
+
                     var fullPath = await boxService.GetFullPathAsync(fileDetails);
+
+                    if (fullPath == null || !fullPath.Any())
+                    {
+                        _logger.LogWarning($"The Full Path for {fileId} is null or empty.  Please check the file in Box.com at https://dittotranscripts.app.box.com/file/{fileId}");
+                        return;
+                    }
+
+                    var ignoreKeywords = new List<string> { "Archive", "Completed Transcripts" };
+
+                    if (fullPath.Any(path =>
+                        !string.IsNullOrWhiteSpace(path) &&
+                        ignoreKeywords.Any(keyword =>
+                            path.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)))
+                    {
+                        _logger.LogWarning($"This file was uploaded to an archive folder or a completed transcripts folder and should be ignored. https://dittotranscripts.app.box.com/file/{fileId}");
+                        return;
+                    }
+                    var uploadedFiles = await googleSheetsService.GetUploadedFiles();
+                    if (uploadedFiles != null && uploadedFiles.Contains(fileId))
+                    {
+                        _logger.LogWarning($"This file has already been processed and should be skipped. https://dittotranscripts.app.box.com/file/{fileId}");
+                        return; 
+                    }
                     
                     var fileMetaData = await fileExtractor.CreateFileMetaData(fileDetails, fullPath);
 

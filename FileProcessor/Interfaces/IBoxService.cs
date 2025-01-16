@@ -14,5 +14,8 @@
         System.Threading.Tasks.Task<Folder> GetFolderByIdAsync(string folderId);
         Task<Webhooks> GetWebhooksAsync();
         Task<bool> WebhookForFolderExists(string folderId);
+        Task<FileVersions> GetFileVersionsAsync(string fileId);
+        Task<FileVersion> GetFileVersionAsync(string fileId, string fileVersionId);
+        
     }
 }
