@@ -1,13 +1,15 @@
-﻿namespace FileProcessor.Models
+﻿ 
+namespace FileProcessor.Models
 {
     public class JobLog
     {
         public string Status { get; set; }
         public string QADate { get; set; }
         public string UploadedBy { get; set; }
+        public string ClientFullName { get; set; }
         public string Client { get; set; }
         public Hyperlink Template { get; set; }       
-        public string Category { get; set; } = "General";
+        public string? Category { get; set; } 
         public string FileName { get; set; }
         public string FileLink { get; set; }
         public DateTime DateReceived { get; set; }
@@ -18,7 +20,7 @@
         public string Transcriptionist { get; set; }
         public TimeSpan FileLength { get; set; }
         public double Minutes { get; set; }
-        public string TAT { get; set; } = "Standard";
+        public string? TAT { get; set; }
 
         // New Columns (defaulted to null)
         public int? NumberOfSpeakers { get; set; } = null;
@@ -44,7 +46,7 @@
         {
             Status,
             QADate,
-            UploadedBy,
+            ClientFullName,
             Client,
             Template != null ? $"=HYPERLINK(\"{Template.Url}\", \"{Template.Text}\")" : null, // Template column            
             Category,
@@ -58,7 +60,7 @@
             Transcriptionist,
             FileLength != default ? FileLength.ToString(@"hh\:mm\:ss") : null,
             Minutes != 0 ? Minutes : null,
-            JobLogValidator.ValidateTAT(TAT),
+            TAT,
             NumberOfSpeakers,             // Null if not set
             VerbatimOrTimestamps,         // Null if not set
             TT,
@@ -71,6 +73,7 @@
             SpecialTemplate != null ? $"=HYPERLINK(\"{SpecialTemplate.Url}\", \"{SpecialTemplate.Text}\")" : null,
             Feedback,
             NotesAndComments,
+            UploadedBy,
             FileId
         };
         }
@@ -80,28 +83,13 @@
         private static readonly List<string> ValidCategories = new()
     {
         "Legal", "Law Enforcement", "Medical", "General", "Spanish", "Copy Typing"
-    };
-
-        private static readonly List<string> ValidTATs = new()
-    {
-        "Rush", "Standard", "Extended", "Warrant"
-    };
+    };      
 
         public static string ValidateCategory(string category)
         {
             return !string.IsNullOrEmpty(category) && ValidCategories.Contains(category)
                 ? category
                 : "General"; // Default to "General" if null or invalid
-        }
-
-        public static string ValidateTAT(string tat)
-        {
-            return !string.IsNullOrEmpty(tat) && ValidTATs.Contains(tat)
-                ? tat
-                : "Standard"; // Default to "Standard" if null or invalid
-        }
-
-
-
+        }  
     }
 }

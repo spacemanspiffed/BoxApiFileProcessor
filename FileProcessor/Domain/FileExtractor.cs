@@ -23,15 +23,7 @@ namespace FileProcessor.Domain
         {
             // Match client name and template from a folder in the full path
             var matchedClient = GoogleSheetsService.GetAllClients()
-                .FirstOrDefault(client => fullPath.Contains(client, StringComparer.OrdinalIgnoreCase));
-
-            var hyperLinkToClientTemplate = matchedClient != null ? GoogleSheetsService.GetTemplateForClient(matchedClient) : null;
-
-            //Per Alec -- If the client name is null we can go with the email address of the uploader
-            //if (matchedClient == null)
-            //{
-            //    matchedClient = file.CreatedBy.Login;
-            //}
+                .FirstOrDefault(client => fullPath.Contains(client, StringComparer.OrdinalIgnoreCase));            
 
             var folderResponseType = GetFolderResponseType(fullPath);           
 
@@ -45,7 +37,7 @@ namespace FileProcessor.Domain
 
             return new JobLog
             {
-                Client = matchedClient ?? "",
+                ClientFullName = matchedClient ?? "",
                 UploadedBy = file.CreatedBy.Login,
                 Category = category,
                 FileName = file.Name,
@@ -156,7 +148,7 @@ namespace FileProcessor.Domain
             }
             return category;
         }
-        private string GetFolderResponseType(List<string> fullPath)
+        private string? GetFolderResponseType(List<string> fullPath)
         {
             var serviceResponseMapping = new List<string>()
             {
@@ -169,7 +161,7 @@ namespace FileProcessor.Domain
             var firstMatch = fullPath.FirstOrDefault(serviceResponseMapping.Contains);
 
             //This is backwards            
-            var folderResponseType = "Standard";
+            string? folderResponseType; // lets default to null
             switch (firstMatch)
             {
                 case "1-2 Business Days":
@@ -182,7 +174,7 @@ namespace FileProcessor.Domain
                     folderResponseType = "Extended";
                     break;
                 default:
-                    folderResponseType = "Standard";
+                    folderResponseType = null;
                     break;
             }
             return folderResponseType;

@@ -111,6 +111,7 @@ namespace FileProcessor
             var app = builder.Build();
             app.UseMiddleware<RequestLoggingMiddleware>();
 
+            app.MapGet("/", () => "Welcome to the base address!");
             // Configure the HTTP request pipeline.
             app.UseSwagger();
             app.UseSwaggerUI();            

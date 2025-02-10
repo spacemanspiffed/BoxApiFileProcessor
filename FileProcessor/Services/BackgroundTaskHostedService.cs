@@ -2,6 +2,7 @@
 using FileProcessor.Interfaces;
 using Microsoft.Extensions.Options;
 using System;
+using System.Reflection.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,6 +14,7 @@ namespace FileProcessor.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<BackgroundTaskHostedService> _logger;
         private readonly GoogleSheetConfig _googleSheetConfig;
+        private readonly int _maxRetries = 3;
 
         public BackgroundTaskHostedService(IBackgroundTaskQueue taskQueue, IServiceProvider serviceProvider, ILogger<BackgroundTaskHostedService> logger, IOptions<GoogleSheetConfig> googleSheetConfig)
         {
@@ -53,6 +55,27 @@ namespace FileProcessor.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error occurred executing task.");
+                    
+                    // Sleeping and requeue the request
+                    var retryDelay = TimeSpan.FromSeconds(10); // Adjust delay as needed
+                    _logger.LogWarning($"Delaying {retryDelay.TotalSeconds} seconds before retrying file {task.FileId}. we have retried {task.RetryCounter} times.");
+                    await Task.Delay(retryDelay, stoppingToken);
+
+
+                    if (task.RetryCounter < _maxRetries)
+                    {
+                        _logger.LogWarning($"Requeuing file {task.FileId} for retry attempt {task.RetryCounter + 1}/{_maxRetries}.");
+
+                        await _taskQueue.QueueBackgroundWorkItemAsync(new Models.FileProcessingTask
+                        {
+                            FileId = task.FileId,
+                            RetryCounter = task.RetryCounter + 1
+                        });
+                    }
+                    else
+                    {
+                        _logger.LogCritical(ex, $"Max retries reached for file {task.FileId}. File will not be processed.");
+                    }                    
                 }
             }
         }
@@ -66,15 +89,28 @@ namespace FileProcessor.Services
                 {
                     _logger.LogInformation("Processing file: {FileName}", fileDetails.Name);
 
-                    var fileTypesToIgnore = await googleSheetsService.GetIgnoredFileTypes();
-
+                    var fileTypesToIgnore = await googleSheetsService.GetIgnoredFileTypes();                                      
+                    
+                    
                     if (fileTypesToIgnore != null && fileDetails.Extension != null)
                     {
-                        if (fileTypesToIgnore.IndexOf(fileDetails.Extension, (int)StringComparison.OrdinalIgnoreCase) >= 0)
+                        if (fileTypesToIgnore.Any(type => type.Equals(fileDetails.Extension, StringComparison.OrdinalIgnoreCase)))
                         {
                             _logger.LogWarning($"This file type is in the ignore list and should be skipped. https://dittotranscripts.app.box.com/file/{fileId}");
                             return;
                         }
+                    }
+
+                    //looks like the webhook might not include the extension in some cases!!!
+                    if (fileTypesToIgnore != null && fileDetails.Extension == null && fileDetails.Name != null)
+                    {
+                        var extension = GetExtensionFromFileName(fileDetails.Name);
+                        if (fileTypesToIgnore.Any(type => type.Equals(extension, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            _logger.LogWarning($"This file type is in the ignore list and should be skipped. https://dittotranscripts.app.box.com/file/{fileId}");
+                            return;
+                        }
+
                     }
 
                     var fullPath = await boxService.GetFullPathAsync(fileDetails);
@@ -117,6 +153,20 @@ namespace FileProcessor.Services
             {
                 _logger.LogError(ex, "Error processing file in background.");
             }
+        }
+
+        private string GetExtensionFromFileName(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return string.Empty;
+            }
+            var lastDotIndex = fileName.LastIndexOf('.');
+            if (lastDotIndex < 0)
+            {
+                return string.Empty;
+            }
+            return fileName.Substring(lastDotIndex);
         }
     }
 }

@@ -138,7 +138,7 @@ namespace FileProcessor.Controllers
 
                     if (fileTypesToIgnore != null && fileDetails.Extension != null)
                     {
-                        if (fileTypesToIgnore.IndexOf(fileDetails.Extension, (int)StringComparison.OrdinalIgnoreCase) >= 0)
+                        if (fileTypesToIgnore.Any(type => type.Equals(fileDetails.Extension, StringComparison.OrdinalIgnoreCase)))
                         {
                             _logger.LogWarning($"This file type is in the ignore list and should be skipped. https://dittotranscripts.app.box.com/file/{fileId}");
                             return BadRequest("This file type is ignored");
@@ -247,7 +247,8 @@ namespace FileProcessor.Controllers
                     // Enqueue the task
                     await _taskQueue.QueueBackgroundWorkItemAsync(new FileProcessingTask
                     {
-                        FileId = webhookEvent.Source.Id
+                        FileId = webhookEvent.Source.Id,
+                        RetryCounter = 0
                     });
 
                     return Ok("Processing started");

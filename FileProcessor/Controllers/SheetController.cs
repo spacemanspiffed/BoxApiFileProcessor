@@ -37,12 +37,12 @@ namespace FileProcessor.Controllers
         }
 
         [HttpPost("ExpireCache")]
-        public async Task<IActionResult> ExpireCustomerCache()
+        public async Task<IActionResult> ExpireCache()
         {
             try
             {
                 await _googleSheetsService.ExpireCache();
-                return Ok("Cache expired successfully.");
+                return Ok("Cache refreshed for ignored_Types and customers successfully.");
             }
             catch (Exception ex)
             {
